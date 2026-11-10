@@ -1,0 +1,161 @@
+__include__: [
+  '../runtime.yml',
+]
+
+task: detection
+
+evaluator:
+  type: OBBEvaluator
+  metrics: ['yolo_obb']
+
+num_classes: 5
+angle_factor: 3.141592653589793
+remap_mscoco_category: False
+
+print_freq: 2000
+output_dir: ./outputs/dfine_hgnetv2_x_mm_obb
+checkpoint_freq: 4
+plot_train_batch_freq: 12
+
+sync_bn: True
+find_unused_parameters: True
+verbose_type: 'origin'
+
+use_amp: True
+scaler:
+  type: GradScaler
+  enabled: True
+
+use_ema: True
+ema:
+  type: ModelEMA
+  decay: 0.9999
+  warmups: 1000
+  start: 0
+
+cache_imgsz: 960
+ram_cache: False
+
+yolo_metrice: True
+
+epoches: 80
+clip_max_norm: 0.1
+
+optimizer:
+  type: AdamW
+  params:
+    -
+      params: '^(?=.*backbone)(?!.*norm|bn).*$'
+      lr: 0.0000025
+    -
+      params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.
+
+  lr: 0.00025
+  betas: [0.9, 0.999]
+  weight_decay: 0.000125
+
+lr_scheduler:
+  type: MultiStepLR
+  milestones: [500]
+  gamma: 0.1
+
+lr_warmup_scheduler:
+  type: LinearWarmup
+  warmup_duration: 500
+
+model: DEIM_MG
+criterion: OBBDEIMCriterion
+postprocessor: OBBPostProcessor
+
+use_focal_loss: True
+eval_spatial_size: [640, 640]
+
+lrsheduler: flatcosine
+lr_gamma: 1
+warmup_iter: 500
+flat_epoch: 4000000
+no_aug_epoch: 0
+
+OBBPostProcessor:
+  num_top_queries: 300
+
+DEIM_MG:
+  yaml_path: configs/mutilmodality/yaml/dfine-x-obb-mm.yaml
+  freeze_stem_only: True
+  freeze_at: 0
+  freeze_norm: True
+
+train_dataloader:
+  type: DataLoader
+  dataset:
+    type: MultimodalOBBDetection
+    img_folder: /root/code/project/dataset_dronevehicle_obb_mm/images/train
+    label_folder: /root/code/project/dataset_dronevehicle_obb_mm/labels/train
+    modality_folder: /root/code/project/dataset_dronevehicle_obb_mm/modality_images/train
+    modality_format: image
+    modality_size_mismatch: error
+    data_yaml: /root/code/project/dataset_dronevehicle_obb_mm/data.yaml
+    transforms:
+      type: MultimodalOBBCompose
+      ops:
+        - {type: OBBRandomHorizontalFlip, p: 0.5}
+        - {type: OBBRandomRotate, angle_range: 180, p: 0.5, fill: 0}
+        - {type: OBBResize, size: [640, 640]}
+        - {type: OBBSanitize, min_area: 1.0}
+        - {type: ConvertPILImage, dtype: float32, scale: true}
+        - {type: NormalizeNPYMinMax}
+        - {type: ConvertOBBBoxes, normalize: true, angle_factor: 3.141592653589793}
+      policy: ~
+      mosaic_prob: ~
+  collate_fn:
+    type: BatchMultimodalCollateFunction
+    base_size: 640
+    base_size_repeat: 3
+    stop_epoch: 72
+    mixup_prob: 0.0
+    ema_restart_decay: 0.9998
+  shuffle: True
+  num_workers: 4
+  drop_last: True
+  pin_memory: True
+  total_batch_size: 4
+
+val_dataloader:
+  type: DataLoader
+  dataset:
+    type: MultimodalOBBDetection
+    img_folder: /root/code/project/dataset_dronevehicle_obb_mm/images/val
+    label_folder: /root/code/project/dataset_dronevehicle_obb_mm/labels/val
+    modality_folder: /root/code/project/dataset_dronevehicle_obb_mm/modality_images/val
+    modality_format: image
+    modality_size_mismatch: error
+    data_yaml: /root/code/project/dataset_dronevehicle_obb_mm/data.yaml
+    transforms:
+      type: MultimodalOBBCompose
+      ops:
+        - {type: OBBResize, size: [640, 640]}
+        - {type: OBBSanitize, min_area: 1.0}
+        - {type: ConvertPILImage, dtype: float32, scale: true}
+        - {type: NormalizeNPYMinMax}
+        - {type: ConvertOBBBoxes, normalize: true, angle_factor: 3.141592653589793}
+  collate_fn:
+    type: BatchMultimodalCollateFunction
+  shuffle: False
+  num_workers: 4
+  drop_last: False
+  pin_memory: True
+  total_batch_size: 4
+
+OBBDEIMCriterion:
+  weight_dict: {loss_vfl: 1, loss_bbox: 5, loss_probiou: 2, loss_fgl: 0.15, loss_ddf: 1.5, loss_ddf_angle: 1.5}
+  losses: ['vfl', 'boxes', 'local']
+  alpha: 1.0
+  gamma: 0.0
+  vfl_iou_type: prob_iou
+  reg_max: 32
+  matcher:
+    type: OBBHungarianMatcher
+    weight_dict: {cost_class: 2, cost_bbox: 5, cost_probiou: 2}
+    alpha: 0.25
+    gamma: 2.0

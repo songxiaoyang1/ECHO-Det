@@ -1,0 +1,48 @@
+num_classes: 1
+angle_factor: 3.141592653589793
+
+train_dataloader:
+  type: DataLoader
+  dataset:
+    type: OBBDetection
+    img_folder: /root/code/project/UAV-ROD/train/images
+    label_folder: /root/code/project/UAV-ROD/train/labels
+    data_yaml: /root/code/project/UAV-ROD/uav_rod_obb.yaml
+    transforms:
+      type: Compose
+      ops:
+        - {type: OBBRandomHorizontalFlip, p: 0.5}
+        - {type: OBBRandomRotate, angle_range: 180, p: 0.5, fill: 0}
+        - {type: OBBResize, size: [640, 640]}
+        - {type: OBBSanitize, min_area: 1.0}
+        - {type: ConvertPILImage, dtype: float32, scale: true}
+        - {type: ConvertOBBBoxes, normalize: true, angle_factor: 3.141592653589793}
+  collate_fn:
+    type: BatchImageCollateFunction
+    base_size: 640
+    base_size_repeat: ~
+  shuffle: true
+  total_batch_size: 8
+  num_workers: 8
+
+val_dataloader:
+  type: DataLoader
+  dataset:
+    type: OBBDetection
+    img_folder: /root/code/project/UAV-ROD/test/images
+    label_folder: /root/code/project/UAV-ROD/test/labels
+    data_yaml: /root/code/project/UAV-ROD/uav_rod_obb.yaml
+    transforms:
+      type: Compose
+      ops:
+        - {type: OBBResize, size: [640, 640]}
+        - {type: OBBSanitize, min_area: 1.0}
+        - {type: ConvertPILImage, dtype: float32, scale: true}
+        - {type: ConvertOBBBoxes, normalize: true, angle_factor: 3.141592653589793}
+  collate_fn:
+    type: BatchImageCollateFunction
+    base_size: 640
+    base_size_repeat: ~
+  shuffle: false
+  total_batch_size: 8
+  num_workers: 8

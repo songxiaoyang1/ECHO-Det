@@ -1,0 +1,52 @@
+__include__: [
+  '../../rtdetrv2/rtdetrv2_r101vd_6x_custom.yml',
+  '../../dataset/uavrob_obb_detection.yml'
+]
+
+output_dir: ./outputs/rtdetrv2_r101vd_6x_obb
+
+task: detection
+model: DEIM
+criterion: OBBDEIMCriterion
+postprocessor: OBBPostProcessor
+angle_factor: 3.141592653589793
+use_focal_loss: True
+eval_spatial_size: [640, 640]
+
+DEIM:
+  decoder: OBBRTDETRTransformerv2
+
+OBBRTDETRTransformerv2:
+  feat_channels: [384, 384, 384]
+  feat_strides: [8, 16, 32]
+  hidden_dim: 256
+  dim_feedforward: 1024
+  num_levels: 3
+  num_layers: 6
+  eval_idx: -1
+  num_queries: 300
+  num_denoising: 100
+  label_noise_ratio: 0.5
+  box_noise_scale: 1.0
+  num_points: [3, 6, 3]
+  cross_attn_method: default
+  query_select_method: default
+
+OBBPostProcessor:
+  num_top_queries: 300
+
+OBBDEIMCriterion:
+  weight_dict: {loss_vfl: 1, loss_bbox: 5, loss_probiou: 2}
+  losses: ['vfl', 'boxes']
+  alpha: 1.0
+  gamma: 0.0
+  vfl_iou_type: prob_iou
+  matcher:
+    type: OBBHungarianMatcher
+    weight_dict: {cost_class: 2, cost_bbox: 5, cost_probiou: 2}
+    alpha: 0.25
+    gamma: 2.0
+
+evaluator:
+  type: OBBEvaluator
+  metrics: ['yolo_obb']

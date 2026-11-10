@@ -1,0 +1,74 @@
+__include__: [
+  '../dfine/dfine_hgnetv2_n_custom.yml',
+  '../dataset/visdrone_detection.yml',
+  '../base/deim.yml'
+]
+
+print_freq: 20
+output_dir: ./outputs/deim_hgnetv2_n_custom
+checkpoint_freq: 12
+text_cache_file: text_embedding/tips_v2_visdrone_text_cache.pth
+
+model: OVDEIM_MG
+
+OVDEIM_MG:
+  yaml_path: configs/ultralytics-yaml/ov-cfg/dfine-n-ov.yaml
+  img_dim: 128
+  text_dim: 768
+  text_adapter_layers: 1
+
+optimizer:
+  type: AdamW
+  params:
+    -
+      params: '^(?=.*backbone)(?!.*norm|bn).*$'
+      lr: 0.0004
+    -
+      params: '^(?=.*backbone)(?=.*norm|bn).*$'
+      lr: 0.0004
+      weight_decay: 0.
+    -
+      params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn|bias)).*$'
+      weight_decay: 0.
+
+  lr: 0.0008
+  betas: [0.9, 0.999]
+  weight_decay: 0.0001
+
+# Increase to search for the optimal ema
+epoches: 160 # 148 + 12
+
+## Our LR-Scheduler
+flat_epoch: 78    # 4 + epoch // 2, e.g., 40 = 4 + 72 / 2
+no_aug_epoch: 12
+lr_gamma: 1.0
+
+## Our DataAug
+train_dataloader:
+  dataset:
+    transforms:
+      ops:
+        - {type: Mosaic, output_size: 320, rotation_range: 10, translation_range: [0.1, 0.1], scaling_range: [0.5, 1.5], probability: 1.0, fill_value: 0, use_cache: False, max_cached_images: 50, random_pop: True}
+        - {type: RandomPhotometricDistort, p: 0.5}
+        - {type: RandomZoomOut, fill: 0}
+        - {type: RandomIoUCrop, p: 0.8}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip}
+        - {type: Resize, size: [640, 640], }
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+        - {type: RandomLoadTexts, num_classes: 10}
+        - {type: LookupTextFeats}
+      policy:
+        epoch: [4, 78, 148]   # list
+        ops: ['Mosaic', 'RandomPhotometricDistort', 'RandomZoomOut', 'RandomIoUCrop']
+
+  collate_fn:
+    mixup_epochs: [4, 78]
+    stop_epoch: 148
+    base_size_repeat: ~
+
+  total_batch_size: 4
+val_dataloader:
+  total_batch_size: 4

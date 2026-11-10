@@ -1,0 +1,167 @@
+__include__: [
+  '../runtime.yml',
+]
+
+task: detection
+
+evaluator:
+  type: CocoEvaluator
+  iou_types: ['bbox', 'segm']
+
+num_classes: 1
+remap_mscoco_category: False
+
+print_freq: 2000
+output_dir: ./outputs/deim_hgnetv2_m_mm_ov_seg
+checkpoint_freq: 4
+plot_train_batch_freq: 12
+text_cache_file: text_embedding/tips_v2_seg_text_cache.pth
+
+sync_bn: True
+find_unused_parameters: True
+verbose_type: 'origin'
+
+use_amp: True
+scaler:
+  type: GradScaler
+  enabled: True
+
+use_ema: True
+ema:
+  type: ModelEMA
+  decay: 0.9999
+  warmups: 1000
+  start: 0
+
+cache_imgsz: 960
+ram_cache: False
+
+yolo_metrice: True
+
+epoches: 102
+clip_max_norm: 0.1
+
+optimizer:
+  type: AdamW
+  params:
+    -
+      params: '^(?=.*backbone)(?!.*(bn|norm)).*$'
+      lr: 0.00004
+    -
+      params: '^(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.
+
+  lr: 0.0004
+  betas: [0.9, 0.999]
+  weight_decay: 0.0001
+
+lr_scheduler:
+  type: MultiStepLR
+  milestones: [500]
+  gamma: 0.1
+
+lr_warmup_scheduler:
+  type: LinearWarmup
+  warmup_duration: 500
+
+model: OVDEIM_MG
+criterion: DEIMCriterion
+postprocessor: SegPostProcessor
+eval_mask_ratio: 4
+
+use_focal_loss: True
+eval_spatial_size: [640, 640]
+
+lrsheduler: flatcosine
+lr_gamma: 0.5
+warmup_iter: 2000
+flat_epoch: 49
+no_aug_epoch: 12
+
+SegPostProcessor:
+  num_top_queries: 300
+
+OVDEIM_MG:
+  yaml_path: configs/mutilmodality/yaml/dfine-m-seg-mm-ov.yaml
+  img_dim: 256
+  text_dim: 768
+  text_adapter_layers: 1
+
+train_dataloader:
+  type: DataLoader
+  dataset:
+    type: MultimodalCocoDetection
+    img_folder: /root/code/project/dataset_seg/train
+    npy_folder: /root/code/project/dataset_seg/train/npy/npz
+    ann_file: /root/code/project/dataset_seg/train/_annotations.coco.json
+    return_masks: True
+    modality_format: npy
+    modality_size_mismatch: error
+    transforms:
+      type: MultimodalCompose
+      ops:
+        - {type: MultimodalMosaic, output_size: 320, rotation_range: 10, translation_range: [0.1, 0.1], scaling_range: [0.5, 1.5], probability: 1.0, fill_value: 0, use_cache: False, max_cached_images: 50, random_pop: True}
+        - {type: RandomPhotometricDistort, p: 0.5}
+        - {type: RandomZoomOut, fill: 0}
+        - {type: RandomIoUCrop, p: 0.8}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip}
+        - {type: Resize, size: [640, 640]}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: NormalizeNPYMinMax}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+        - {type: RandomLoadTexts, num_classes: 1}
+        - {type: LookupTextFeats}
+      policy:
+        name: stop_epoch
+        epoch: [4, 49, 90]
+        ops: ['MultimodalMosaic', 'RandomPhotometricDistort', 'RandomZoomOut', 'RandomIoUCrop']
+      mosaic_prob: 0.5
+  collate_fn:
+    type: BatchMultimodalCollateFunction
+    base_size: 640
+    stop_epoch: 90
+    mixup_prob: 0.5
+    mixup_epochs: [4, 49]
+  shuffle: True
+  num_workers: 4
+  drop_last: True
+  pin_memory: True
+  total_batch_size: 4
+
+val_dataloader:
+  type: DataLoader
+  dataset:
+    type: MultimodalCocoDetection
+    img_folder: /root/code/project/dataset_seg/valid
+    npy_folder: /root/code/project/dataset_seg/valid/npy/npz
+    ann_file: /root/code/project/dataset_seg/valid/_annotations.coco.json
+    return_masks: True
+    modality_format: npy
+    modality_size_mismatch: error
+    transforms:
+      type: MultimodalCompose
+      ops:
+        - {type: Resize, size: [640, 640]}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: NormalizeNPYMinMax}
+  collate_fn:
+    type: BatchMultimodalCollateFunction
+  shuffle: False
+  num_workers: 4
+  drop_last: False
+  pin_memory: True
+  total_batch_size: 4
+
+DEIMCriterion:
+  weight_dict: {loss_vfl: 1, loss_bbox: 5, loss_giou: 2, loss_fgl: 0.15, loss_ddf: 1.5, loss_mask_ps_ce: 10.0, loss_mask_ps_dice: 5.0}
+  losses: ['vfl', 'boxes', 'local', 'mask_ps']
+  alpha: 0.75
+  gamma: 2.0
+  reg_max: 32
+  matcher:
+    type: HungarianMatcher
+    weight_dict: {cost_class: 2, cost_bbox: 5, cost_giou: 2}
+    alpha: 0.25
+    gamma: 2.0

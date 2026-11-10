@@ -1,0 +1,47 @@
+__include__: [
+  '../dfine/dfine_hgnetv2_n_custom.yml',
+  '../dataset/multimodal_rgb_npy_detection.yml',
+  '../base/deim.yml'
+]
+
+print_freq: 20
+output_dir: ./outputs/deim_hgnetv2_n_multimodal_rgb_only
+
+# A方案说明：
+# - 数据侧使用 MultimodalCocoDetection + BatchMultimodalCollateFunction
+# - 训练引擎在多模态字典样本中默认选择 samples["rgb"] 作为模型输入
+# - samples["npy"] 参与数据流与batch组织，但不参与模型前向
+
+optimizer:
+  type: AdamW
+  params:
+    -
+      params: '^(?=.*backbone)(?!.*norm|bn).*$'
+      lr: 0.0004
+    -
+      params: '^(?=.*backbone)(?=.*norm|bn).*$'
+      lr: 0.0004
+      weight_decay: 0.
+    -
+      params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn|bias)).*$'
+      weight_decay: 0.
+
+  lr: 0.0008
+  betas: [0.9, 0.999]
+  weight_decay: 0.0001
+
+epoches: 160
+flat_epoch: 78
+no_aug_epoch: 12
+lr_gamma: 1.0
+
+train_dataloader:
+  dataset:
+    transforms:
+      policy:
+        epoch: [4, 78, 148]
+
+  collate_fn:
+    mixup_epochs: [4, 78]
+    stop_epoch: 148
+    base_size_repeat: ~

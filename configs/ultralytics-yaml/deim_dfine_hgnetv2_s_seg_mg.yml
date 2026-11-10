@@ -1,0 +1,58 @@
+__include__: [
+  '../dfine/dfine_hgnetv2_s_custom.yml',
+  '../dataset/car_seg.yml',
+  '../base/deim.yml'
+]
+
+print_freq: 1000
+output_dir: ./outputs/deim_hgnetv2_s_seg_coco
+postprocessor: SegPostProcessor
+eval_mask_ratio: 4
+
+model: DEIM_MG
+
+DEIM_MG:
+  yaml_path: configs/ultralytics-yaml/seg-cfg/dfine-s-seg.yaml
+
+optimizer:
+  type: AdamW
+  params:
+    -
+      params: '^(?=.*backbone)(?!.*(bn|norm)).*$'
+      lr: 0.0002
+    -
+      params: '^(?=.*(?:norm|bn)).*$'     # except bias
+      weight_decay: 0.
+
+  lr: 0.0004
+  betas: [0.9, 0.999]
+  weight_decay: 0.0001
+
+
+# Increase to search for the optimal ema
+epoches: 132 # 120 + 4n
+
+## Our LR-Scheduler
+flat_epoch: 64    # 4 + epoch // 2, e.g., 40 = 4 + 72 / 2
+no_aug_epoch: 12
+
+## Our DataAug
+train_dataloader:
+  dataset:
+    transforms:
+      policy:
+        epoch: [4, 64, 120]   # list
+
+  collate_fn:
+    mixup_epochs: [4, 64]
+    stop_epoch: 120
+  total_batch_size: 4
+val_dataloader:
+  total_batch_size: 4
+
+DEIMCriterion:
+  weight_dict: {loss_vfl: 1, loss_bbox: 5, loss_giou: 2, loss_fgl: 0.15, loss_ddf: 1.5, loss_mask_ps_ce: 10.0, loss_mask_ps_dice: 5.0}
+  losses: ['vfl', 'boxes', 'local', 'mask_ps']
+  alpha: 0.75
+  gamma: 2.0
+  reg_max: 32

@@ -1,0 +1,77 @@
+
+backbone:
+
+- [-1, nn.Identity, []]                                      # 0
+
+# -------- modality input --------
+
+- [0, GetRGBModalityTensor, []]                              # 1 RGB
+- [0, GetNPYModalityTensor, []]                              # 2 Depth / NPY
+
+# -------- RGB branch --------
+
+- [1, HGNetv2, {"name": "B0", "pretrained": True, "return_idx": [1, 2, 3], "freeze_at": -1, "freeze_norm": False, "use_lab": True}]                                                        # 3 RGB backbone
+
+- [3, GetIndexOutput, [0]]                                   # 4 RGB-P3/8
+- [3, GetIndexOutput, [1]]                                   # 5 RGB-P4/16
+- [3, GetIndexOutput, [2]]                                   # 6 RGB-P5/32
+
+# EFCM should be inserted after RGB backbone feature extraction
+- [4, EFCM, [128, 128]]                                      # 7 RGB-EFCM-P3
+- [5, EFCM, [256, 256]]                                      # 8 RGB-EFCM-P4
+- [6, EFCM, [512, 512]]                                      # 9 RGB-EFCM-P5
+
+# -------- Depth branch --------
+
+# ODAL-Stem is placed immediately after the depth input
+- [2, ODALStem, [1, 16, 3, 1, True]]                         # 10 Depth-ODAL-Stem
+- [10, HG_Stage, [16, 32, 1, 1, False, False, 3, True, 'se']]              # 11 Depth-P2/4
+- [-1, HG_Stage, [32, 128, 1, 1, True, False, 3, True, 'se']]              # 12 Depth-P3/8
+- [-1, HG_Stage, [64, 256, 1, 1, True, True, 5, True, 'se']]               # 13 Depth-P4/16
+- [-1, HG_Stage, [128, 512, 1, 1, True, True, 5, True, 'se']]              # 14 Depth-P5/32
+
+# -------- multimodal fusion --------
+# Replace simple Concat with DCGRM
+- [[7, 12], DCGRM, [128, 128, 256, "P3"]]                    # 15 DCGRM-P3/8
+- [[8, 13], DCGRM, [256, 256, 256, "P4"]]                    # 16 DCGRM-P4/16
+- [[9, 14], DCGRM, [512, 512, 256, "P5"]]                    # 17 DCGRM-P5/32
+
+
+encoder:
+
+- [15, ConvNormLayer_fuse, [256, 1, 1]]                     # 18 Fused-P3/8
+- [16, ConvNormLayer_fuse, [256, 1, 1]]                     # 19 Fused-P4/16
+- [17, ConvNormLayer_fuse, [256, 1, 1]]                     # 20 Fused-P5/32
+
+# P5 top-level encoding
+- [-1, TransformerEncoderBlock, [8, 1024, 0.1, "relu", 10000, False]]   # 21 P5/32
+
+- [-1, ConvNormLayer_fuse, [256, 1, 1]]                     # 22
+
+# P5 -> P4
+- [-1, nn.Upsample, [None, 2, "nearest"]]                   # 23
+
+- [[-1, 19], Concat, []]                                    # 24 P4/16
+- [-1, RepNCSPELAN4,[256, 512, 64, 1, False, 'silu']]       # 25 P4/16
+
+- [-1, ConvNormLayer_fuse, [256, 1, 1]]                     # 26
+
+# P4 -> P3
+- [-1, nn.Upsample, [None, 2, "nearest"]]                   # 27
+- [[-1, 18], Concat, []]                                    # 28 P3/8
+- [-1, RepNCSPELAN4, [256, 512, 64, 1, False, 'silu']]      # 29 P3/8
+
+# P3 -> P4
+- [-1, SCDown, [256, 3, 2, 'silu']]                         # 30 P4/16
+- [[-1, 26], Concat, []]                                    # 31 P4/16
+- [-1, RepNCSPELAN4, [256, 512, 64, 1, False, 'silu']]      # 32 P4/16
+
+# P4 -> P5
+- [-1, SCDown, [256, 3, 2, 'silu']]                         # 33 P5/32
+- [[-1, 22], Concat, []]                                    # 34 P5/32
+- [-1, RepNCSPELAN4, [256, 512, 64, 1, False, 'silu']]      # 35 P5/32
+
+
+decoder:
+
+- [[29, 32, 35], OBBDFINETransformer, {"feat_strides": [8, 16, 32],"hidden_dim": 256,"num_levels": 3,"num_layers": 3,"num_points": [3, 6, 3],"dim_feedforward": 1024,"reg_max": 32,"reg_scale": 4,"layer_scale": 1,"angle_dim": 1,"use_prob_iou": True}]

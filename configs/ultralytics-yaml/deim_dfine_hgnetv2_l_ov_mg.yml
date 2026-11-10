@@ -1,0 +1,69 @@
+__include__: [
+  '../dfine/dfine_hgnetv2_l_custom.yml',
+  '../dataset/visdrone_detection.yml',
+  '../base/deim.yml'
+]
+
+output_dir: ./outputs/deim_hgnetv2_l_custom
+print_freq: 20
+checkpoint_freq: 12
+text_cache_file: text_embedding/tips_v2_visdrone_text_cache.pth
+
+model: OVDEIM_MG
+
+OVDEIM_MG:
+  yaml_path: configs/ultralytics-yaml/ov-cfg/dfine-l-ov.yaml
+  img_dim: 256
+  text_dim: 768
+  text_adapter_layers: 1
+  freeze_stem_only: True
+  freeze_at: 0
+  freeze_norm: True
+
+optimizer:
+  type: AdamW
+  params:
+    -
+      params: '^(?=.*backbone)(?!.*norm|bn).*$'
+      lr: 0.000025
+    -
+      params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.
+
+  lr: 0.0005
+  betas: [0.9, 0.999]
+  weight_decay: 0.000125
+
+# Increase to search for the optimal ema
+epoches: 58 # 72 + 2n
+
+## Our LR-Scheduler
+flat_epoch: 29    # 4 + epoch // 2, e.g., 40 = 4 + 72 / 2
+no_aug_epoch: 8
+
+train_dataloader:
+  dataset:
+    transforms:
+      ops:
+        - {type: Mosaic, output_size: 320, rotation_range: 10, translation_range: [0.1, 0.1], scaling_range: [0.5, 1.5], probability: 1.0, fill_value: 0, use_cache: False, max_cached_images: 50, random_pop: True}
+        - {type: RandomPhotometricDistort, p: 0.5}
+        - {type: RandomZoomOut, fill: 0}
+        - {type: RandomIoUCrop, p: 0.8}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip}
+        - {type: Resize, size: [640, 640], }
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+        - {type: RandomLoadTexts, num_classes: 10}
+        - {type: LookupTextFeats}
+      policy:
+        epoch: [4, 29, 50]   # list
+        ops: ['Mosaic', 'RandomPhotometricDistort', 'RandomZoomOut', 'RandomIoUCrop']
+
+  collate_fn:
+    mixup_epochs: [4, 29]
+    stop_epoch: 50
+  total_batch_size: 4
+val_dataloader:
+  total_batch_size: 4

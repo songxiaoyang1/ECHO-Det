@@ -1,0 +1,68 @@
+num_classes: 11
+angle_factor: 3.141592653589793
+
+train_dataloader:
+  type: DataLoader
+  dataset:
+    type: MultimodalOBBDetection
+    img_folder: /root/code/project/dataset_atr_umod_obb_mm/images/train
+    label_folder: /root/code/project/dataset_atr_umod_obb_mm/labels/train
+    modality_folder: /root/code/project/dataset_atr_umod_obb_mm/modality_images/train
+    modality_format: image
+    modality_size_mismatch: error
+    data_yaml: /root/code/project/dataset_atr_umod_obb_mm/data.yaml
+    transforms:
+      type: MultimodalOBBCompose
+      ops:
+        - {type: MultimodalOBBMosaic, output_size: 320, probability: 1.0, fill_value: 0, use_cache: false, max_cached_images: 50, random_pop: true}
+        - {type: OBBRandomHorizontalFlip, p: 0.5}
+        - {type: OBBRandomRotate, angle_range: 180, p: 0.5, fill: 0}
+        - {type: OBBResize, size: [640, 640]}
+        - {type: OBBSanitize, min_area: 1.0}
+        - {type: ConvertPILImage, dtype: float32, scale: true}
+        - {type: NormalizeNPYMinMax}
+        - {type: ConvertOBBBoxes, normalize: true, angle_factor: 3.141592653589793}
+      policy:
+        name: stop_epoch
+        epoch: [4, 78, 148]
+        ops: ['MultimodalOBBMosaic']
+      mosaic_prob: 0.5
+  collate_fn:
+    type: BatchMultimodalCollateFunction
+    base_size: 640
+    base_size_repeat: ~
+    mixup_prob: 0.0
+  shuffle: true
+  total_batch_size: 8
+  num_workers: 8
+  drop_last: true
+  pin_memory: true
+
+val_dataloader:
+  type: DataLoader
+  dataset:
+    type: MultimodalOBBDetection
+    img_folder: /root/code/project/dataset_atr_umod_obb_mm/images/test
+    label_folder: /root/code/project/dataset_atr_umod_obb_mm/labels/test
+    modality_folder: /root/code/project/dataset_atr_umod_obb_mm/modality_images/test
+    modality_format: image
+    modality_size_mismatch: error
+    data_yaml: /root/code/project/dataset_atr_umod_obb_mm/data.yaml
+    transforms:
+      type: MultimodalOBBCompose
+      ops:
+        - {type: OBBResize, size: [640, 640]}
+        - {type: OBBSanitize, min_area: 1.0}
+        - {type: ConvertPILImage, dtype: float32, scale: true}
+        - {type: NormalizeNPYMinMax}
+        - {type: ConvertOBBBoxes, normalize: true, angle_factor: 3.141592653589793}
+  collate_fn:
+    type: BatchMultimodalCollateFunction
+    base_size: 640
+    base_size_repeat: ~
+    mixup_prob: 0.0
+  shuffle: false
+  total_batch_size: 8
+  num_workers: 8
+  drop_last: false
+  pin_memory: true

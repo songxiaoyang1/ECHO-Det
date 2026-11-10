@@ -1,0 +1,91 @@
+__include__: [
+  '../dfine/dfine_hgnetv2_s_custom.yml',
+  '../dataset/visdrone_detection.yml',
+  '../base/deim.yml'
+]
+
+num_classes: 1
+
+print_freq: 20
+output_dir: ./outputs/deim_hgnetv2_s_custom_ov_seg
+checkpoint_freq: 12
+text_cache_file: text_embedding/tips_v2_seg_text_cache.pth
+
+postprocessor: SegPostProcessor
+eval_mask_ratio: 4
+
+evaluator:
+  type: CocoEvaluator
+  iou_types: ['bbox', 'segm']
+
+model: OVDEIM_MG
+
+OVDEIM_MG:
+  yaml_path: configs/ultralytics-yaml/ov-seg-cfg/dfine-s-ov-seg.yaml
+  img_dim: 256
+  text_dim: 768
+  text_adapter_layers: 1
+
+optimizer:
+  type: AdamW
+  params:
+    -
+      params: '^(?=.*backbone)(?!.*(bn|norm)).*$'
+      lr: 0.0002
+    -
+      params: '^(?=.*(?:norm|bn)).*$'     # except bias
+      weight_decay: 0.
+
+  lr: 0.0004
+  betas: [0.9, 0.999]
+  weight_decay: 0.0001
+
+
+# Increase to search for the optimal ema
+epoches: 132 # 120 + 4n
+
+## Our LR-Scheduler
+flat_epoch: 64    # 4 + epoch // 2, e.g., 40 = 4 + 72 / 2
+no_aug_epoch: 12
+
+## Our DataAug
+train_dataloader:
+  dataset:
+    img_folder: /root/code/project/dataset_seg/train
+    ann_file: /root/code/project/dataset_seg/train/_annotations.coco.json
+    return_masks: True
+    transforms:
+      ops:
+        - {type: Mosaic, output_size: 320, rotation_range: 10, translation_range: [0.1, 0.1], scaling_range: [0.5, 1.5], probability: 1.0, fill_value: 0, use_cache: False, max_cached_images: 50, random_pop: True}
+        - {type: RandomPhotometricDistort, p: 0.5}
+        - {type: RandomZoomOut, fill: 0}
+        - {type: RandomIoUCrop, p: 0.8}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip}
+        - {type: Resize, size: [640, 640], }
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+        - {type: RandomLoadTexts, num_classes: 1}
+        - {type: LookupTextFeats}
+      policy:
+        epoch: [4, 64, 120]   # list
+        ops: ['Mosaic', 'RandomPhotometricDistort', 'RandomZoomOut', 'RandomIoUCrop']
+
+  collate_fn:
+    mixup_epochs: [4, 64]
+    stop_epoch: 120
+  total_batch_size: 4
+val_dataloader:
+  total_batch_size: 4
+  dataset:
+    img_folder: /root/code/project/dataset_seg/valid
+    ann_file: /root/code/project/dataset_seg/valid/_annotations.coco.json
+    return_masks: True
+
+DEIMCriterion:
+  weight_dict: {loss_vfl: 1, loss_bbox: 5, loss_giou: 2, loss_fgl: 0.15, loss_ddf: 1.5, loss_mask_ps_ce: 10.0, loss_mask_ps_dice: 5.0}
+  losses: ['vfl', 'boxes', 'local', 'mask_ps']
+  alpha: 0.75
+  gamma: 2.0
+  reg_max: 32

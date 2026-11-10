@@ -1,0 +1,73 @@
+task: detection
+
+evaluator:
+  type: CocoEvaluator
+  iou_types: ['bbox']
+
+num_classes: 11
+remap_mscoco_category: False
+
+train_dataloader:
+  type: DataLoader
+  dataset:
+    type: MultimodalCocoDetection
+    img_folder: /root/code/project/DEIM-MutilModel-Dataset/adas/images
+    modality_folder: /root/code/project/DEIM-MutilModel-Dataset/adas/depth_png
+    modality_format: image
+    modality_size_mismatch: error
+    ann_file: /root/code/project/DEIM-MutilModel-Dataset/adas/annotations/train.json
+    return_masks: False
+    transforms:
+      type: MultimodalCompose
+      ops:
+        - {type: MultimodalMosaic, output_size: 320, rotation_range: 10, translation_range: [0.1, 0.1], scaling_range: [0.5, 1.5], probability: 1.0, use_cache: True}
+        - {type: RandomPhotometricDistort, p: 0.5}
+        - {type: RandomZoomOut, fill: 0}
+        - {type: RandomIoUCrop, p: 0.8}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip}
+        - {type: Resize, size: [640, 640]}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: NormalizeNPYMinMax}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+      policy:
+        name: stop_epoch
+        epoch: 72
+        ops: ['MultimodalMosaic', 'RandomPhotometricDistort', 'RandomZoomOut', 'RandomIoUCrop']
+      mosaic_prob: 0.5
+  shuffle: True
+  num_workers: 4
+  drop_last: True
+  pin_memory: True
+  collate_fn:
+    type: BatchMultimodalCollateFunction
+    base_size: 640
+    base_size_repeat: 3
+    stop_epoch: 72
+  total_batch_size: 8
+
+val_dataloader:
+  type: DataLoader
+  dataset:
+    type: MultimodalCocoDetection
+    img_folder: /root/code/project/DEIM-MutilModel-Dataset/adas/images
+    modality_folder: /root/code/project/DEIM-MutilModel-Dataset/adas/depth_png
+    modality_format: image
+    modality_size_mismatch: error
+    ann_file: /root/code/project/DEIM-MutilModel-Dataset/adas/annotations/val.json
+    return_masks: False
+    transforms:
+      type: MultimodalCompose
+      ops:
+        - {type: Resize, size: [640, 640]}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: NormalizeNPYMinMax}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+  shuffle: False
+  num_workers: 4
+  drop_last: False
+  pin_memory: True
+  collate_fn:
+    type: BatchMultimodalCollateFunction
+  total_batch_size: 8

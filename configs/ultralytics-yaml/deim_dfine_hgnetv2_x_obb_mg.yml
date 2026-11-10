@@ -1,0 +1,77 @@
+__include__: [
+  '../runtime.yml',
+  '../base/dataloader_dfine.yml',
+  '../base/optimizer.yml',
+  '../base/dfine_hgnetv2.yml',
+  '../base/deim.yml',
+  '../dataset/uavrob_obb_detection.yml',
+]
+
+print_freq: 20
+output_dir: ./outputs/deim_hgnetv2_x_uavrob_obb
+
+task: detection
+model: DEIM_MG
+criterion: OBBDEIMCriterion
+postprocessor: OBBPostProcessor
+angle_factor: 3.141592653589793
+use_focal_loss: True
+eval_spatial_size: [640, 640]
+
+DEIM_MG:
+  yaml_path: configs/ultralytics-yaml/obb-cfg/dfine-x-obb.yaml
+
+train_dataloader:
+  total_batch_size: 4
+  dataset:
+    transforms:
+      type: Compose
+      ops:
+        - {type: OBBMosaic, output_size: [320, 320], probability: 1.0, fill_value: 0, use_cache: false, max_cached_images: 50, random_pop: true}
+        - {type: OBBRandomHorizontalFlip, p: 0.5}
+        - {type: OBBRandomRotate, angle_range: 180, p: 0.5, fill: 0}
+        - {type: OBBResize, size: [640, 640]}
+        - {type: OBBSanitize, min_area: 1.0}
+        - {type: ConvertPILImage, dtype: float32, scale: true}
+        - {type: ConvertOBBBoxes, normalize: true, angle_factor: 3.141592653589793}
+      policy:
+        name: stop_epoch
+        epoch: [4, 29, 50]
+        ops: ['OBBMosaic']
+      mosaic_prob: 0.5
+  collate_fn:
+    mixup_prob: 0.5
+    mixup_epochs: [4, 29]
+    stop_epoch: 50
+    base_size_repeat: 20
+
+val_dataloader:
+  total_batch_size: 4
+  dataset:
+    transforms:
+      type: Compose
+      ops:
+        - {type: OBBResize, size: [640, 640]}
+        - {type: OBBSanitize, min_area: 1.0}
+        - {type: ConvertPILImage, dtype: float32, scale: true}
+        - {type: ConvertOBBBoxes, normalize: true, angle_factor: 3.141592653589793}
+
+OBBPostProcessor:
+  num_top_queries: 300
+
+OBBDEIMCriterion:
+  weight_dict: {loss_vfl: 1, loss_bbox: 5, loss_probiou: 2, loss_fgl: 0.15, loss_ddf: 1.5, loss_ddf_angle: 1.5}
+  losses: ['vfl', 'boxes', 'local']
+  alpha: 1.0
+  gamma: 0.0
+  vfl_iou_type: prob_iou
+  reg_max: 32
+  matcher:
+    type: OBBHungarianMatcher
+    weight_dict: {cost_class: 2, cost_bbox: 5, cost_probiou: 2}
+    alpha: 0.25
+    gamma: 2.0
+
+evaluator:
+  type: OBBEvaluator
+  metrics: ['yolo_obb']

@@ -1,0 +1,34 @@
+__include__: [
+  'deim_dfine_hgnetv2_n_obb_mg.yml',
+]
+
+output_dir: ./outputs/deim_hgnetv2_n_uavrob_ov_obb
+text_cache_file: text_embedding/tips_v2_uavrob_text_cache.pth
+
+model: OVDEIM_MG
+
+OVDEIM_MG:
+  yaml_path: configs/ultralytics-yaml/ov-obb-cfg/dfine-n-ov-obb.yaml
+  img_dim: 128
+  text_dim: 768
+  text_adapter_layers: 1
+
+train_dataloader:
+  dataset:
+    transforms:
+      type: Compose
+      ops:
+        - {type: OBBMosaic, output_size: [320, 320], probability: 1.0, fill_value: 0, use_cache: false, max_cached_images: 50, random_pop: true}
+        - {type: OBBRandomHorizontalFlip, p: 0.5}
+        - {type: OBBRandomRotate, angle_range: 180, p: 0.5, fill: 0}
+        - {type: OBBResize, size: [640, 640]}
+        - {type: OBBSanitize, min_area: 1.0}
+        - {type: ConvertPILImage, dtype: float32, scale: true}
+        - {type: ConvertOBBBoxes, normalize: true, angle_factor: 3.141592653589793}
+        - {type: RandomLoadTexts, num_classes: 1}
+        - {type: LookupTextFeats}
+      policy:
+        name: stop_epoch
+        epoch: [4, 78, 148]
+        ops: ['OBBMosaic']
+      mosaic_prob: 0.5

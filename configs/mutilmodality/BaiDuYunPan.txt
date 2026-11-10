@@ -1,0 +1,10 @@
+通过网盘分享的文件：多模态数据生成 链接: https://pan.baidu.com/s/16Zn4VbZw51D1aQFxENPUGg?pwd=hqdd
+提取码: hqdd
+--来自百度网盘超级会员v8的分享
+
+包含以下内容：
+1. Depth-Anything-3的深度模态生成数据的代码
+2. FLIR—V1数据集
+3. M3FD数据集
+4. DroneVehicle-OBB数据集
+5. ATR-UMOD-OBB数据集 来源：https://github.com/supercpy/ATR-UMOD

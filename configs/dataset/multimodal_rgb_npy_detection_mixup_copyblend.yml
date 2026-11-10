@@ -1,0 +1,93 @@
+task: detection
+
+evaluator:
+  type: CocoEvaluator
+  iou_types: ['bbox']
+
+num_classes: 11
+remap_mscoco_category: False
+
+train_dataloader:
+  type: DataLoader
+  dataset:
+    type: MultimodalCocoDetection
+    # img_folder: /path/to/rgb/train/images
+    # npy_folder: /path/to/npy/train
+    # ann_file: /path/to/annotations/train.json
+    img_folder: /root/code/project/DEIM-MutilModel-Dataset/images
+    npy_folder: /root/code/project/DEIM-MutilModel-Dataset/depth
+    ann_file: /root/code/project/DEIM-MutilModel-Dataset/annotations/train.json
+    return_masks: False
+    modality_format: npy
+    modality_size_mismatch: error
+    transforms:
+      type: MultimodalCompose
+      ops:
+        - {type: MultimodalMosaic, output_size: 320, rotation_range: 10, translation_range: [0.1, 0.1], scaling_range: [0.5, 1.5], probability: 1.0, use_cache: True}
+        - {type: RandomPhotometricDistort, p: 0.5}
+        - {type: RandomZoomOut, fill: 0}
+        - {type: RandomIoUCrop, p: 0.8}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip}
+        - {type: Resize, size: [640, 640]}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: NormalizeNPYMinMax}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+      policy:
+        name: stop_epoch
+        epoch: 72
+        ops: ['MultimodalMosaic', 'RandomPhotometricDistort', 'RandomZoomOut', 'RandomIoUCrop']
+      mosaic_prob: 0.5
+  shuffle: True
+  num_workers: 4
+  drop_last: True
+  pin_memory: True
+  collate_fn:
+    type: BatchMultimodalCollateFunction
+    base_size: 640
+    base_size_repeat: 3
+    stop_epoch: 72
+
+    # MixUp
+    mixup_prob: 0.5
+    mixup_epochs: [4, 29]
+
+    # CopyBlend
+    copyblend_prob: 0.5
+    copyblend_epochs: [4, 50]
+    copyblend_type: blend
+    area_threshold: 100
+    num_objects: 3
+    with_expand: True
+    expand_ratios: [0.1, 0.25]
+
+  total_batch_size: 8
+
+val_dataloader:
+  type: DataLoader
+  dataset:
+    type: MultimodalCocoDetection
+    # img_folder: /path/to/rgb/val/images
+    # npy_folder: /path/to/npy/val
+    # ann_file: /path/to/annotations/val.json
+    img_folder: /root/code/project/DEIM-MutilModel-Dataset/images
+    npy_folder: /root/code/project/DEIM-MutilModel-Dataset/depth
+    ann_file: /root/code/project/DEIM-MutilModel-Dataset/annotations/val.json
+    return_masks: False
+    modality_format: npy
+    modality_size_mismatch: error
+    transforms:
+      type: MultimodalCompose
+      ops:
+        - {type: Resize, size: [640, 640]}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: NormalizeNPYMinMax}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+  shuffle: False
+  num_workers: 4
+  drop_last: False
+  pin_memory: True
+  collate_fn:
+    type: BatchMultimodalCollateFunction
+  total_batch_size: 8
